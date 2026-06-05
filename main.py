@@ -99,9 +99,17 @@ async def get_stats():
 
 @app.websocket("/ws/{room_code}/{player_id}")
 async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: int):
+    print(f"🔌 WS CONNECT: room={room_code}, player={player_id}")
     await manager.connect(room_code, player_id, websocket)
+    print(f"✅ WS CONNECTED: room={room_code}, player={player_id}")
     
     try:
+        # Отправляем приветственное сообщение
+        await manager.send_to_player(room_code, player_id, {
+            "type": "chat_message",
+            "data": {"player_id": 0, "message": "Welcome to the game!"}
+        })
+        
         await manager.broadcast_to_room(room_code, {
             "type": "player_joined",
             "data": {"player_id": player_id}
@@ -109,6 +117,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: in
         
         while True:
             data = await websocket.receive_json()
+            print(f"📨 RECEIVED: {data['type']}")
             
             if data["type"] == "ready":
                 await manager.broadcast_to_room(room_code, {
@@ -117,6 +126,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: in
                 })
                 
             elif data["type"] == "start_game":
+                print(f"🎮 START GAME: room={room_code}")
                 await game_logic.start_game(room_code)
                 
             elif data["type"] == "vote":
@@ -128,20 +138,25 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: in
                 )
                 
             elif data["type"] == "chat":
+                print(f"💬 CHAT: {data['data']['message']}")
+                # Отправляем сообщение ВСЕМ, включая отправителя
                 await manager.broadcast_to_room(room_code, {
                     "type": "chat_message",
                     "data": {
                         "player_id": player_id,
                         "message": data["data"]["message"]
                     }
-                }, exclude_player=player_id)
+                })
     
     except WebSocketDisconnect:
+        print(f"🔌 WS DISCONNECT: room={room_code}, player={player_id}")
         manager.disconnect(room_code, player_id)
         await manager.broadcast_to_room(room_code, {
             "type": "player_left",
             "data": {"player_id": player_id}
         })
+    except Exception as e:
+        print(f"❌ WS ERROR: {e}")
 
 @app.get("/api/categories")
 async def get_categories():
