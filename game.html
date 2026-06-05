@@ -578,7 +578,7 @@
             };
 
             try {
-                const response = await fetch('http://127.0.0.1:8000/api/rooms/create', {
+                const response = await fetch('/api/rooms/create', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(data)
@@ -608,7 +608,7 @@
             }
 
             try {
-                const response = await fetch('http://127.0.0.1:8000/api/rooms/join', {
+                const response = await fetch('/api/rooms/join', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({nickname, room_code: roomCode})
@@ -631,7 +631,8 @@
         function connectWebSocket() {
             if (ws) ws.close();
             
-            ws = new WebSocket(`ws://127.0.0.1:8000/ws/${currentRoomCode}/${currentPlayerId}`);
+           const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+           ws = new WebSocket(`${protocol}//${window.location.host}/ws/${currentRoomCode}/${currentPlayerId}`);
             
             ws.onopen = () => {
                 console.log('✅ WebSocket подключен');
@@ -830,7 +831,7 @@
 
         async function updateLobby() {
             try {
-                const response = await fetch(`http://127.0.0.1:8000/api/rooms/${currentRoomCode}`);
+                const response = await fetch('/api/rooms/${currentRoomCode}`);
                 const data = await response.json();
                 
                 gameData.players = data.players;
@@ -905,7 +906,7 @@
 
         async function loadStats() {
             try {
-                const response = await fetch('http://127.0.0.1:8000/api/stats');
+                const response = await fetch('/api/stats');
                 const data = await response.json();
                 
                 document.getElementById('statsData').innerHTML = `
