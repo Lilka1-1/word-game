@@ -228,35 +228,50 @@ class GameLogic:
             db.close()
     
     async def handle_vote(self, room_code: str, voter_id: int, word_guessed: bool):
-        db = self.db_session_factory()
-        try:
-            from database import Room, Player, Phrase
+    db = self.db_session_factory()
+    try:
+        from database import Room, Player, Phrase
+        
+        room = db.query(Room).filter(Room.code == room_code).first()
+        if not room:
+            return
+        
+        explainer = db.query(Player).filter(Player.room_id == room.id, Player.is_explaining == True).first()
+        
+        if explainer and word_guessed:
+            voter = db.query(Player).filter(Player.id == voter_id).first()
             
-            room = db.query(Room).filter(Room.code == room_code).first()
-            if not room:
-                return
-            
-            explainer = db.query(Player).filter(Player.room_id == room.id, Player.is_explaining == True).first()
-            
-            if explainer and word_guessed:
-                explainer.score += 1
-                voter = db.query(Player).filter(Player.id == voter_id).first()
-                if voter and voter.id != explainer.id:
-                    voter.score += 1
+            # Проверяем, что голосует не сам объясняющий
+            if voter and voter.id != explainer.id:
+                voter.score += 2       # Угадавший получает 2 очка
+                explainer.score += 1   # Объясняющий получает 1 очко
                 db.commit()
+                
+                print(f"🏆 SCORE: {voter.nickname}=+2, {explainer.nickname}=+1")
                 
                 await manager.broadcast_to_room(room_code, {
                     "type": "score_update",
                     "data": {"scores": {p.id: p.score for p in room.players}}
                 })
                 
-                phrase = db.query(Phrase).filter(Phrase.room_id == room.id, Phrase.round_number == room.current_round, Phrase.is_used == False).first()
+                # Отмечаем фразу как использованную
+                phrase = db.query(Phrase).filter(
+                    Phrase.room_id == room.id, 
+                    Phrase.round_number == room.current_round, 
+                    Phrase.is_used == False
+                ).first()
+                
                 if phrase:
                     phrase.is_used = True
                     db.commit()
                     await manager.broadcast_to_room(room_code, {
                         "type": "word_guessed",
-                        "data": {"phrase": phrase.text}
+                        "data": {
+                            "phrase": phrase.text, 
+                            "guessed_by": voter.nickname,
+                            "voter_score": voter.score,
+                            "explainer_score": explainer.score
+                        }
                     })
-        finally:
-            db.close()
+    finally:
+        db.close()
