@@ -6,13 +6,13 @@ import asyncio
 class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, Dict[int, WebSocket]] = {}
-        self.room_timers: Dict[str, asyncio.Task] = {}
         
     async def connect(self, room_code: str, player_id: int, websocket: WebSocket):
         await websocket.accept()
         if room_code not in self.active_connections:
             self.active_connections[room_code] = {}
         self.active_connections[room_code][player_id] = websocket
+        print(f"🔌 CONNECTED: room={room_code}, player={player_id}, total in room={len(self.active_connections[room_code])}")
         
     def disconnect(self, room_code: str, player_id: int):
         if room_code in self.active_connections:
@@ -21,29 +21,26 @@ class ConnectionManager:
                 del self.active_connections[room_code]
                 
     async def broadcast_to_room(self, room_code: str, message: dict, exclude_player: int = None):
-    print(f"📡 BROADCAST to room={room_code}, type={message.get('type')}, players={list(self.active_connections.get(room_code, {}).keys())}")
-    if room_code in self.active_connections:
-        for player_id, connection in list(self.active_connections[room_code].items()):
-            if player_id != exclude_player:
-                try:
-                    await connection.send_json(message)
-                    print(f"  ✅ Sent to player {player_id}")
-                except Exception as e:
-                    print(f"  ❌ Failed to send to player {player_id}: {e}")
-    else:
-        print(f"  ❌ Room {room_code} not found in connections")
+        if room_code in self.active_connections:
+            players = list(self.active_connections[room_code].items())
+            print(f"📡 BROADCAST room={room_code}, type={message.get('type')}, to {len(players)} players")
+            for player_id, connection in players:
+                if player_id != exclude_player:
+                    try:
+                        await connection.send_json(message)
+                        print(f"  ✅ Sent to player {player_id}")
+                    except Exception as e:
+                        print(f"  ❌ Error sending to player {player_id}: {e}")
+        else:
+            print(f"  ❌ Room {room_code} not found")
     
     async def send_to_player(self, room_code: str, player_id: int, message: dict):
         if room_code in self.active_connections and player_id in self.active_connections[room_code]:
             try:
                 await self.active_connections[room_code][player_id].send_json(message)
-            except:
-                pass
-    
-    def cancel_timer(self, room_code: str):
-        if room_code in self.room_timers:
-            self.room_timers[room_code].cancel()
-            del self.room_timers[room_code]
+                print(f"📨 Sent to player {player_id}: {message.get('type')}")
+            except Exception as e:
+                print(f"❌ Error sending to player {player_id}: {e}")
 
 manager = ConnectionManager()
 
@@ -51,27 +48,9 @@ class GameLogic:
     def __init__(self, db_session_factory):
         self.db_session_factory = db_session_factory
         self.categories = {
-            "Смешанная": [
-                "Бабочка", "Самолет", "Кошка", "Робот", "Компьютер",
-                "Баскетбол", "Гитара", "Книга", "Солнце", "Луна",
-                "Чайник", "Велосипед", "Кактус", "Ракета", "Зонтик"
-            ],
-            "Животные": [
-                "Слон", "Жираф", "Пингвин", "Кенгуру", "Дельфин",
-                "Тигр", "Панда", "Орел", "Крокодил", "Хамелеон"
-            ],
-            "Профессии": [
-                "Врач", "Пожарный", "Учитель", "Повар", "Пилот",
-                "Художник", "Музыкант", "Строитель", "Ученый", "Детектив"
-            ],
-            "Еда": [
-                "Пицца", "Мороженое", "Суши", "Бургер", "Торт",
-                "Арбуз", "Шоколад", "Спагетти", "Салат", "Пельмени"
-            ],
-            "Спорт": [
-                "Футбол", "Теннис", "Плавание", "Бокс", "Серфинг",
-                "Лыжи", "Фигурное катание", "Волейбол", "Гольф", "Карате"
-            ]
+            "Mixed": ["Butterfly", "Airplane", "Cat", "Robot", "Computer", "Basketball", "Guitar", "Book", "Sun", "Moon"],
+            "Animals": ["Elephant", "Giraffe", "Penguin", "Kangaroo", "Dolphin", "Tiger", "Panda", "Eagle"],
+            "Food": ["Pizza", "Ice Cream", "Sushi", "Burger", "Cake", "Watermelon", "Chocolate"]
         }
         
     def generate_room_code(self) -> str:
@@ -79,39 +58,24 @@ class GameLogic:
     
     def get_random_phrases(self, category: str, count: int = 30) -> list:
         if category in self.categories:
-            phrases_pool = self.categories[category]
+            pool = self.categories[category]
         else:
-            phrases_pool = self.categories["Смешанная"]
-        
-        # Если фраз не хватает, повторяем с небольшими изменениями
-        while len(phrases_pool) < count:
-            phrases_pool.append(random.choice(phrases_pool) + " 2.0")
-        
-        return random.sample(phrases_pool, count)
+            pool = self.categories["Mixed"]
+        while len(pool) < count:
+            pool.append(random.choice(pool))
+        return random.sample(pool, min(count, len(pool)))
     
     async def create_room(self, host_nickname: str, max_rounds: int, category: str, timer_seconds: int):
         db = self.db_session_factory()
         try:
             from database import Room, Player, Phrase
             
-            room = Room(
-                code=self.generate_room_code(),
-                max_rounds=max_rounds,
-                category=category,
-                timer_seconds=timer_seconds
-            )
+            room = Room(code=self.generate_room_code(), max_rounds=max_rounds, category=category, timer_seconds=timer_seconds)
             db.add(room)
             db.flush()
             
-            colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", 
-                     "#DDA0DD", "#98D8C8", "#F7DC6F", "#BB8FCE", "#85C1E9"]
-            
-            player = Player(
-                nickname=host_nickname,
-                room_id=room.id,
-                is_ready=True,
-                avatar_color=random.choice(colors)
-            )
+            colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7"]
+            player = Player(nickname=host_nickname, room_id=room.id, is_ready=True, avatar_color=random.choice(colors))
             db.add(player)
             db.flush()
             
@@ -119,25 +83,11 @@ class GameLogic:
             
             phrases = self.get_random_phrases(category, max_rounds * 3)
             for i, phrase_text in enumerate(phrases):
-                phrase = Phrase(
-                    text=phrase_text,
-                    room_id=room.id,
-                    round_number=(i // 3) + 1,
-                    category=category,
-                    difficulty=random.randint(1, 3)
-                )
+                phrase = Phrase(text=phrase_text, room_id=room.id, round_number=(i // 3) + 1, category=category)
                 db.add(phrase)
             
             db.commit()
-            
-            return {
-                "room_id": room.id,
-                "room_code": room.code,
-                "player_id": player.id,
-                "max_rounds": max_rounds,
-                "category": category,
-                "timer_seconds": timer_seconds
-            }
+            return {"room_id": room.id, "room_code": room.code, "player_id": player.id, "max_rounds": max_rounds, "category": category, "timer_seconds": timer_seconds}
         finally:
             db.close()
     
@@ -150,31 +100,18 @@ class GameLogic:
             if not room:
                 return None
             
-            colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", 
-                     "#DDA0DD", "#98D8C8", "#F7DC6F", "#BB8FCE", "#85C1E9"]
-            
-            player = Player(
-                nickname=nickname,
-                room_id=room.id,
-                avatar_color=random.choice(colors)
-            )
+            colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7"]
+            player = Player(nickname=nickname, room_id=room.id, avatar_color=random.choice(colors))
             db.add(player)
             db.commit()
             db.refresh(player)
             
-            return {
-                "room_id": room.id,
-                "player_id": player.id,
-                "player_nickname": player.nickname,
-                "max_rounds": room.max_rounds,
-                "category": room.category,
-                "timer_seconds": room.timer_seconds,
-                "avatar_color": player.avatar_color
-            }
+            return {"room_id": room.id, "player_id": player.id, "player_nickname": player.nickname, "max_rounds": room.max_rounds, "category": room.category, "timer_seconds": room.timer_seconds, "avatar_color": player.avatar_color}
         finally:
             db.close()
     
     async def start_game(self, room_code: str):
+        print(f"🎮 START GAME: {room_code}")
         db = self.db_session_factory()
         try:
             from database import Room, Player, Phrase
@@ -192,42 +129,46 @@ class GameLogic:
             room.current_round = 1
             db.commit()
             
-            phrase = db.query(Phrase).filter(
-                Phrase.room_id == room.id,
-                Phrase.round_number == 1,
-                Phrase.is_used == False
-            ).first()
+            phrase = db.query(Phrase).filter(Phrase.room_id == room.id, Phrase.round_number == 1, Phrase.is_used == False).first()
             
+            print(f"📢 Broadcasting game_starting to room {room_code}")
             await manager.broadcast_to_room(room_code, {
                 "type": "game_starting",
                 "data": {
                     "current_round": 1,
                     "max_rounds": room.max_rounds,
                     "timer_seconds": room.timer_seconds,
-                    "explainer": {
-                        "id": first_explainer.id,
-                        "nickname": first_explainer.nickname,
-                        "avatar_color": first_explainer.avatar_color
-                    }
+                    "explainer": {"id": first_explainer.id, "nickname": first_explainer.nickname, "avatar_color": first_explainer.avatar_color}
                 }
             })
             
             if phrase:
                 await manager.send_to_player(room_code, first_explainer.id, {
                     "type": "new_phrase",
-                    "data": {
-                        "phrase": phrase.text,
-                        "difficulty": phrase.difficulty
-                    }
+                    "data": {"phrase": phrase.text, "difficulty": phrase.difficulty if hasattr(phrase, 'difficulty') else 1}
                 })
             
-            asyncio.create_task(self.start_round_timer(room_code, self, room.timer_seconds))
+            # Запускаем таймер
+            print(f"⏱️ Starting timer for room {room_code}")
+            asyncio.create_task(self._run_timer(room_code, room.timer_seconds))
             
         finally:
             db.close()
     
+    async def _run_timer(self, room_code: str, seconds: int):
+        print(f"⏱️ TIMER RUNNING: room={room_code}, seconds={seconds}")
+        for remaining in range(seconds, -1, -1):
+            await manager.broadcast_to_room(room_code, {
+                "type": "timer_update",
+                "data": {"seconds": remaining, "total": seconds}
+            })
+            if remaining > 0:
+                await asyncio.sleep(1)
+        print(f"⏱️ TIMER DONE: room={room_code}")
+        await self.end_round(room_code)
+    
     async def end_round(self, room_code: str):
-        manager.cancel_timer(room_code)
+        print(f"🏁 END ROUND: {room_code}")
         db = self.db_session_factory()
         try:
             from database import Room, Player, Phrase
@@ -236,11 +177,7 @@ class GameLogic:
             if not room:
                 return
             
-            current_explainer = db.query(Player).filter(
-                Player.room_id == room.id,
-                Player.is_explaining == True
-            ).first()
-            
+            current_explainer = db.query(Player).filter(Player.room_id == room.id, Player.is_explaining == True).first()
             if current_explainer:
                 current_explainer.is_explaining = False
             
@@ -249,10 +186,7 @@ class GameLogic:
             
             await manager.broadcast_to_room(room_code, {
                 "type": "round_end",
-                "data": {
-                    "round": room.current_round,
-                    "scores": scores
-                }
+                "data": {"round": room.current_round, "scores": scores}
             })
             
             await asyncio.sleep(2)
@@ -270,61 +204,28 @@ class GameLogic:
                     "data": {
                         "round": room.current_round,
                         "max_rounds": room.max_rounds,
-                        "explainer": {
-                            "id": next_explainer.id,
-                            "nickname": next_explainer.nickname,
-                            "avatar_color": next_explainer.avatar_color
-                        }
+                        "explainer": {"id": next_explainer.id, "nickname": next_explainer.nickname, "avatar_color": next_explainer.avatar_color}
                     }
                 })
                 
-                phrase = db.query(Phrase).filter(
-                    Phrase.room_id == room.id,
-                    Phrase.round_number == room.current_round,
-                    Phrase.is_used == False
-                ).first()
-                
+                phrase = db.query(Phrase).filter(Phrase.room_id == room.id, Phrase.round_number == room.current_round, Phrase.is_used == False).first()
                 if phrase:
                     await manager.send_to_player(room_code, next_explainer.id, {
                         "type": "new_phrase",
-                        "data": {
-                            "phrase": phrase.text,
-                            "difficulty": phrase.difficulty
-                        }
+                        "data": {"phrase": phrase.text}
                     })
                 
-                asyncio.create_task(self.start_round_timer(room_code, self, room.timer_seconds))
+                asyncio.create_task(self._run_timer(room_code, room.timer_seconds))
             else:
                 winner = max(players, key=lambda p: p.score)
                 await manager.broadcast_to_room(room_code, {
                     "type": "game_end",
-                    "data": {
-                        "final_scores": scores,
-                        "winner": winner.nickname,
-                        "winner_color": winner.avatar_color
-                    }
+                    "data": {"final_scores": scores, "winner": winner.nickname, "winner_color": winner.avatar_color}
                 })
                 room.is_active = False
                 db.commit()
         finally:
             db.close()
-    
-async def start_round_timer(self, room_code: str, game_logic, seconds: int = 60):
-    print(f"⏱️ TIMER START: room={room_code}, seconds={seconds}")
-    for remaining in range(seconds, -1, -1):
-        print(f"⏱️ TIMER TICK: {remaining}")
-        await manager.broadcast_to_room(room_code, {
-            "type": "timer_update",
-            "data": {
-                "seconds": remaining,
-                "total": seconds
-            }
-        })
-        if remaining > 0:
-            await asyncio.sleep(1)
-    
-    print(f"⏱️ TIMER END: room={room_code}")
-    await game_logic.end_round(room_code)
     
     async def handle_vote(self, room_code: str, voter_id: int, word_guessed: bool):
         db = self.db_session_factory()
@@ -335,45 +236,27 @@ async def start_round_timer(self, room_code: str, game_logic, seconds: int = 60)
             if not room:
                 return
             
-            explainer = db.query(Player).filter(
-                Player.room_id == room.id,
-                Player.is_explaining == True
-            ).first()
+            explainer = db.query(Player).filter(Player.room_id == room.id, Player.is_explaining == True).first()
             
             if explainer and word_guessed:
                 explainer.score += 1
-                
                 voter = db.query(Player).filter(Player.id == voter_id).first()
                 if voter and voter.id != explainer.id:
                     voter.score += 1
-                
                 db.commit()
                 
                 await manager.broadcast_to_room(room_code, {
                     "type": "score_update",
-                    "data": {
-                        "scores": {p.id: p.score for p in room.players},
-                        "explainer_id": explainer.id,
-                        "voter_id": voter_id
-                    }
+                    "data": {"scores": {p.id: p.score for p in room.players}}
                 })
                 
-                phrase = db.query(Phrase).filter(
-                    Phrase.room_id == room.id,
-                    Phrase.round_number == room.current_round,
-                    Phrase.is_used == False
-                ).first()
-                
+                phrase = db.query(Phrase).filter(Phrase.room_id == room.id, Phrase.round_number == room.current_round, Phrase.is_used == False).first()
                 if phrase:
                     phrase.is_used = True
                     db.commit()
-                    
                     await manager.broadcast_to_room(room_code, {
                         "type": "word_guessed",
-                        "data": {
-                            "phrase": phrase.text,
-                            "guessed_by": voter.nickname if voter else "Игрок"
-                        }
+                        "data": {"phrase": phrase.text}
                     })
         finally:
             db.close()
