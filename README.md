@@ -47,6 +47,7 @@ Its ME — это онлайн многопользовательская игр
 ## 🚀 Как запустить проект
 
 Игра находится по ссылке https://word-game-qga9.onrender.com/static/game.html
+Документация (Doxygen): https://smlur.github.io/doxygen-for-final-project/
 
 
 ## 👥 Авторы
