@@ -222,7 +222,7 @@ b{
     <div id="voteBox" class="hidden">
         <h3 id="phraseToGuess"></h3>
         <div id="playersVote"></div>
-        <button onclick="sendVote()">Vote</button>
+        <button id="voteBtn" onclick="sendVote()">Vote</button>
     </div>
 
     <!-- RESULT -->
@@ -462,14 +462,15 @@ function sendPhrase(){
 
 /* ================= VOTE FIX ================= */
 function renderPlayers(){
-    const c = document.getElementById("playersVote");
-    c.innerHTML = "";
+    const voteBtn = document.getElementById("voteBtn");
 
-    /* автор НЕ участвует в голосовании вообще */
     if(playerId === currentAuthorId){
         c.innerHTML = "<h3>Ты автор — ожидай голосование</h3>";
+        voteBtn.style.display = "none";
         return;
     }
+
+voteBtn.style.display = "block";
 
     players.forEach(p=>{
         if(p.id === playerId) return; // нельзя голосовать за себя
