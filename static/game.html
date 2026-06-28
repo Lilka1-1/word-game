@@ -196,8 +196,8 @@ b{
     <div>Room: <b id="roomCodeDisplay"></b></div>
     <div id="playersLobby"></div>
     <button id="startBtn" onclick="startGame()">START GAME</button>
-    <button id="leaveBtn" onclick="leaveRoom()">Выйти из комнаты</button>
-    <button id="deleteBtn" onclick="deleteRoom()">Удалить комнату</button>
+    <button id="leaveBtn" onclick="leaveRoom()">Quit the room</button>
+    <button id="deleteBtn" onclick="deleteRoom()">Delete room</button>
 </div>
 
 <!-- GAME -->
@@ -209,10 +209,10 @@ b{
 
     <!-- COLLECT -->
     <div id="collectBox" class="hidden">
-        <h3>Напиши фразу</h3>
-        <div>осталось: <span id="collectTimer">30</span></div>
+        <h3>Write down your phrase</h3>
+        <div>Time left: <span id="collectTimer">30</span></div>
 
-        <input id="phraseInput" placeholder="Твоя фраза">
+        <input id="phraseInput" placeholder="Your phrase">
         <button id="sendBtn" onclick="sendPhrase()">Send</button>
 
         <div id="myPhrase"></div>
@@ -230,11 +230,11 @@ b{
 
     <div id="endButtons" class="hidden">
         <button id="endLeaveBtn" onclick="leaveRoom()">
-            Выйти из комнаты
+            Quit
         </button>
 
         <button id="endDeleteBtn" onclick="deleteRoom()">
-            Удалить комнату
+            Delete the room
         </button>
     </div>
 
